@@ -9,7 +9,13 @@ st.set_page_config(page_title="Pinterest Downloader", page_icon="📌", layout="
 st.markdown(
     """
     <style>
-    /* 1. Animasi Fade-In & Slide-Up untuk Kontainer */
+    /* 1. LATAR BELAKANG APLIKASI */
+    .stApp {
+        background-color: #00000;
+        background-attachment: fixed;
+    }
+    
+    /* 2. Animasi Fade-In & Slide-Up untuk Kontainer */
     @keyframes fadeInUp {
         from {
             opacity: 0;
@@ -26,7 +32,7 @@ st.markdown(
         animation: fadeInUp 0.6s ease-out;
     }
 
-    /* 2. Styling Grid Gambar */
+    /* 3. Styling Grid Gambar */
     [data-testid="stImage"] img {
         border-radius: 12px;
         height: 250px !important;
@@ -42,7 +48,7 @@ st.markdown(
         cursor: pointer;
     }
 
-    /* 3. Styling Tombol (Pinterest Red) */
+    /* 4. Styling Tombol (Pinterest Red) */
     div.stButton > button {
         background-color: #e60023;
         color: white;
