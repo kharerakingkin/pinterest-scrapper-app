@@ -1,81 +1,99 @@
 import streamlit as st
 import os
+import time
+import glob
 from scraper_logic import get_preview, download_and_zip
 
-# --- Setup Dasar & Tema ---
-st.set_page_config(page_title="Pinterest Downloader", page_icon="📌", layout="wide")
+# --- Konfigurasi Dasar ---
+st.set_page_config(page_title="Pinterest Downloader Pro",
+                   page_icon="📌", layout="wide")
 
-# CSS Kustom untuk Animasi Smoot & UI Rapi
+# --- Fungsi Pembersihan (Cleanup) ---
+
+
+def cleanup_old_files(directory="downloaded_images", max_age_seconds=3600):
+    """Menghapus file ZIP yang lebih tua dari 1 jam untuk menghemat ruang"""
+    if not os.path.exists(directory):
+        return
+
+    now = time.time()
+    for f in glob.glob(os.path.join(directory, "*.zip")):
+        if os.stat(f).st_mtime < now - max_age_seconds:
+            try:
+                os.remove(f)
+            except:
+                pass
+
+
+# Jalankan pembersihan setiap kali aplikasi di-refresh
+cleanup_old_files()
+
+# --- CSS Kustom ---
 st.markdown(
     """
     <style>
-    /* 1. LATAR BELAKANG APLIKASI */
+    /* Latar Belakang & Font */
     .stApp {
-        background-color: #00000;
-        background-attachment: fixed;
+        background-color: #0f0f0f;
+        color: #ffffff;
     }
     
-    /* 2. Animasi Fade-In & Slide-Up untuk Kontainer */
+    /* Animasi Fade-In */
     @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Terapkan animasi pada setiap kolom gambar */
     [data-testid="stVerticalBlock"] > div {
         animation: fadeInUp 0.6s ease-out;
     }
 
-    /* 3. Styling Grid Gambar */
+    /* Styling Gambar */
     [data-testid="stImage"] img {
-        border-radius: 12px;
-        height: 250px !important;
+        border-radius: 15px;
+        height: 300px !important;
         object-fit: cover;
-        border: 1px solid #f0f0f0;
-        transition: all 0.3s ease; /* Transisi halus saat hover */
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: 1px solid #333;
     }
 
-    /* Efek Zoom Halus saat Mouse di atas Gambar */
     [data-testid="stImage"] img:hover {
-        transform: scale(1.03);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.15);
-        cursor: pointer;
+        transform: scale(1.02);
+        box-shadow: 0 10px 20px rgba(230, 0, 35, 0.3);
     }
 
-    /* 4. Styling Tombol (Pinterest Red) */
+    /* Styling Tombol Pinterest Red */
     div.stButton > button {
         background-color: #e60023;
         color: white;
+        border-radius: 25px;
         border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        height: 45px;
-        width: 100%;
-        transition: background-color 0.3s ease;
+        padding: 0.5rem 1rem;
+        font-weight: bold;
+        transition: 0.3s;
     }
 
     div.stButton > button:hover {
         background-color: #ad001a;
-        border: none;
-        color: white;
+        transform: translateY(-2px);
     }
 
-    /* Sidebar styling */
-    [data-testid="stSidebar"] {
-        background-color: #000000;
+    /* Checkbox styling */
+    .stCheckbox {
+        background: rgba(255,255,255,0.05);
+        padding: 5px 10px;
+        border-radius: 10px;
     }
-    
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #1a1a1a;
+    }
     .sidebar-title {
         color: #e60023;
         font-weight: 800;
-        font-size: 20px;
-        margin-bottom: 20px;
+        font-size: 24px;
+        text-align: center;
     }
     </style>
     """,
@@ -91,79 +109,108 @@ if "zip_ready" not in st.session_state:
     st.session_state.zip_ready = False
 if "zip_filename" not in st.session_state:
     st.session_state.zip_filename = ""
+if "selected_urls" not in st.session_state:
+    st.session_state.selected_urls = []
 
 # --- Sidebar ---
 with st.sidebar:
-    st.markdown(
-        '<p class="sidebar-title">📌 Pinterest Scrapper</p>', unsafe_allow_html=True
-    )
-    st.write("Temukan inspirasi dan unduh koleksinya secara instan.")
+    st.markdown('<p class="sidebar-title">📌 PINTEREST<br>SCRAPER</p>',
+                unsafe_allow_html=True)
     st.write("---")
 
-    query = st.text_input("Kata Kunci", placeholder="Ketik topik di sini...")
-    limit = st.number_input("Jumlah Gambar", min_value=1, value=20, step=1)
+    query = st.text_input("Apa yang ingin Anda cari?",
+                          placeholder="Contoh: Cyberpunk Architecture")
+    limit = st.number_input("Jumlah limit gambar",
+                            min_value=1, max_value=100, value=20)
 
-    if st.button("Cari Referensi"):
+    if st.button("Cari Gambar", use_container_width=True):
         if query:
-            st.session_state.zip_ready = False
-            st.session_state.zip_filename = ""
-
-            with st.spinner("Sedang mencari gambar..."):
+            with st.spinner("Mengambil data dari Pinterest..."):
                 res = get_preview(query, limit)
-                if isinstance(res, list):
+                if isinstance(res, list) and len(res) > 0:
                     st.session_state.pins = res
                     st.session_state.last_query = query
+                    st.session_state.selected_urls = []  # Reset seleksi
+                    st.session_state.zip_ready = False
                     st.rerun()
                 else:
-                    st.error("Gagal mengambil gambar.")
+                    st.error("Tidak ditemukan gambar atau terjadi kesalahan.")
         else:
-            st.warning("Silakan isi kata kunci!")
+            st.warning("Masukkan kata kunci terlebih dahulu!")
 
 # --- Konten Utama ---
 if st.session_state.pins:
-    # Header Hasil
-    head_col, action_col = st.columns([3, 1.2])
+    # Header & Action Bar
+    col_title, col_action = st.columns([2, 1])
 
-    with head_col:
-        st.write(
-            f"Menampilkan **{len(st.session_state.pins)}** hasil untuk: **{st.session_state.last_query}**"
-        )
+    with col_title:
+        st.markdown(f"### Hasil untuk: `{st.session_state.last_query}`")
+        st.caption(f"Klik centang pada gambar yang ingin diunduh.")
 
-    with action_col:
-        button_placeholder = st.empty()
+    with col_action:
+        selected_count = len(st.session_state.selected_urls)
 
         if st.session_state.zip_ready:
-            zip_path = os.path.join("downloaded_images", st.session_state.zip_filename)
+            zip_path = os.path.join(
+                "downloaded_images", st.session_state.zip_filename)
             if os.path.exists(zip_path):
                 with open(zip_path, "rb") as f:
-                    button_placeholder.download_button(
-                        label="⬇️ Download File ZIP",
+                    st.download_button(
+                        label="⬇️ Download ZIP Sekarang",
                         data=f,
                         file_name=st.session_state.zip_filename,
                         mime="application/zip",
-                        use_container_width=True,
+                        use_container_width=True
                     )
+                if st.button("🔄 Reset / Cari Lagi", use_container_width=True):
+                    st.session_state.zip_ready = False
+                    st.rerun()
         else:
-            if button_placeholder.button("📦 Buat File ZIP", use_container_width=True):
-                with st.spinner("Mengompres file..."):
+            # Tombol ZIP hanya aktif jika ada yang dipilih
+            btn_label = f"📦 ZIP {selected_count} Gambar" if selected_count > 0 else "📦 Pilih Gambar"
+            if st.button(btn_label, use_container_width=True, disabled=(selected_count == 0)):
+                with st.spinner("Sedang memproses ZIP..."):
                     filename = download_and_zip(
-                        st.session_state.pins, st.session_state.last_query
-                    )
+                        st.session_state.selected_urls, st.session_state.last_query)
                     st.session_state.zip_ready = True
                     st.session_state.zip_filename = filename
                     st.rerun()
 
     st.write("---")
 
-    # Grid Gambar dengan Animasi Per Kolom
-    cols = st.columns(4)
-    for i, url in enumerate(st.session_state.pins):
-        with cols[i % 4]:
-            # Container div tambahan untuk membantu animasi (opsional dalam Streamlit)
-            st.image(url, use_container_width=True)
-            st.caption(f"Ref #{i+1}")
+    # Tampilan Grid
+    rows = (len(st.session_state.pins) // 4) + 1
+    for r in range(rows):
+        cols = st.columns(4)
+        for c in range(4):
+            idx = r * 4 + c
+            if idx < len(st.session_state.pins):
+                url = st.session_state.pins[idx]
+                with cols[c]:
+                    st.image(url, use_container_width=True)
+                    # Checkbox untuk memilih
+                    is_selected = st.checkbox(
+                        f"Pilih #{idx+1}", key=f"check_{idx}")
+
+                    # Logika update seleksi
+                    if is_selected:
+                        if url not in st.session_state.selected_urls:
+                            st.session_state.selected_urls.append(url)
+                    else:
+                        if url in st.session_state.selected_urls:
+                            st.session_state.selected_urls.remove(url)
 
 else:
-    st.write("### 👋 Cari Aja Pake ini")
-    st.info("Masukkan kata kunci di sidebar untuk memuat preview gambar.")
-    st.write("---")
+    # Tampilan Awal (Kosong)
+    st.write("")
+    st.write("")
+    st.markdown(
+        """
+        <div style="text-align: center;">
+            <h1 style="font-size: 80px;">🖼️</h1>
+            <h2>Siap untuk mencari inspirasi?</h2>
+            <p style="color: #888;">Gunakan kolom pencarian di sebelah kiri untuk menemukan gambar Pinterest.</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
