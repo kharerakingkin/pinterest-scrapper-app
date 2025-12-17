@@ -1,57 +1,67 @@
 import requests
+import json
 import os
 import zipfile
 from uuid import uuid4
 
 
 def get_preview(query, limit):
-    """Mengambil banyak gambar menggunakan API internal Pinterest"""
-    url = "https://www.pinterest.com/resource/BaseSearchResource/get/"
-
-    # Menyiapkan payload untuk API Pinterest
-    params = {
-        "source_url": f"/search/pins/?q={query}",
-        "data": '{"options":{"isPrefetch":false,"query":"' + query + '","scope":"pins","no_fetch_context_on_resource":false},"context":{}}'
-    }
+    """Mengekstraksi URL gambar dari blok data JSON di dalam HTML"""
+    url = f"https://www.pinterest.com/search/pins/?q={query.replace(' ', '%20')}"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
     }
 
     try:
-        response = requests.get(
-            url, params=params, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=15)
         if response.status_code != 200:
-            return f"Error API: {response.status_code}"
+            return f"Error: Pinterest menolak akses (Status {response.status_code})"
 
-        data = response.json()
-        items = data.get('resource_response', {}).get(
-            'data', {}).get('results', [])
+        # Mencari data JSON di dalam tag <script id="__PWS_DATA__">
+        content = response.text
+        start_marker = '<script id="__PWS_DATA__" type="application/json">'
+        end_marker = '</script>'
 
-        image_urls = []
-        for item in items:
-            images = item.get('images', {})
-            # Ambil resolusi original atau 736x
-            img_url = images.get('orig', {}).get(
-                'url') or images.get('736x', {}).get('url')
-            if img_url:
-                image_urls.append(img_url)
+        if start_marker in content:
+            json_str = content.split(start_marker)[1].split(end_marker)[0]
+            data = json.loads(json_str)
 
-        return image_urls[:limit]
+            # Menelusuri struktur JSON Pinterest yang kompleks
+            pins = []
+            try:
+                # Mencari pin di dalam search results
+                results = data['props']['initialReduxState']['pins']
+                for pin_id in results:
+                    pin_data = results[pin_id]
+                    # Ambil resolusi original atau 736x
+                    img_url = pin_data.get('images', {}).get(
+                        'orig', {}).get('url')
+                    if not img_url:
+                        img_url = pin_data.get('images', {}).get(
+                            '736x', {}).get('url')
+
+                    if img_url and img_url not in pins:
+                        pins.append(img_url)
+            except KeyError:
+                pass
+
+            return pins[:limit]
+
+        return "Gagal mengekstraksi data. Coba lagi dalam beberapa saat."
+
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Terjadi kesalahan: {str(e)}"
 
 
 def download_and_zip(urls, query):
-    """Mengunduh gambar dan membungkusnya ke dalam file ZIP"""
-    folder_name = "downloaded_images"
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
+    if not os.path.exists("downloaded_images"):
+        os.makedirs("downloaded_images")
 
     zip_filename = f"{query.replace(' ', '_')}_{uuid4().hex[:6]}.zip"
-    zip_path = os.path.join(folder_name, zip_filename)
+    zip_path = os.path.join("downloaded_images", zip_filename)
 
     with zipfile.ZipFile(zip_path, 'w') as zip_file:
         for i, url in enumerate(urls):
