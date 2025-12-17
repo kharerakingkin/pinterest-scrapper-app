@@ -4,112 +4,111 @@ import time
 import glob
 from scraper_logic import get_preview, download_and_zip
 
-# --- Konfigurasi Dasar ---
-st.set_page_config(page_title="Pinterest Downloader Pro",
+# --- CONFIG ---
+st.set_page_config(page_title="PinSave - Pinterest Downloader",
                    page_icon="📌", layout="wide")
 
-# --- Fungsi Pembersihan ---
+# --- CLEANUP OLD ZIPS ---
 
 
-def cleanup_old_files(directory="downloaded_images", max_age_seconds=3600):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        return
-    now = time.time()
-    for f in glob.glob(os.path.join(directory, "*.zip")):
-        if os.stat(f).st_mtime < now - max_age_seconds:
-            try:
+def cleanup():
+    path = "downloaded_images"
+    if os.path.exists(path):
+        for f in glob.glob(os.path.join(path, "*.zip")):
+            if time.time() - os.path.getmtime(f) > 3600:  # Hapus jika > 1 jam
                 os.remove(f)
-            except:
-                pass
 
 
-cleanup_old_files()
+cleanup()
 
-# --- CSS Modern ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: white; }
+    .stApp { background-color: #121212; color: white; }
     [data-testid="stImage"] img {
-        border-radius: 12px; height: 280px !important; 
-        object-fit: cover; transition: 0.3s; border: 1px solid #333;
+        border-radius: 15px; height: 320px !important; 
+        object-fit: cover; transition: 0.4s; border: 1px solid #333;
     }
-    [data-testid="stImage"] img:hover { transform: scale(1.03); border-color: #e60023; }
+    [data-testid="stImage"] img:hover { transform: scale(1.02); border-color: #e60023; }
     div.stButton > button {
-        background-color: #e60023; color: white; border-radius: 20px;
-        font-weight: bold; width: 100%; border: none;
+        background-color: #e60023; color: white; border-radius: 30px;
+        font-weight: bold; width: 100%; border: none; height: 50px;
     }
-    div.stButton > button:hover { background-color: #ad001a; border: none; color: white; }
-    .sidebar-title { color: #e60023; font-weight: 800; font-size: 22px; text-align: center; }
+    div.stButton > button:hover { background-color: #ad001a; color: white; }
+    .stCheckbox { background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- State Management ---
-for key in ["pins", "last_query", "zip_ready", "zip_filename", "selected_urls"]:
-    if key not in st.session_state:
-        st.session_state[key] = [] if "urls" in key or "pins" in key else ""
-if "zip_ready" not in st.session_state:
-    st.session_state.zip_ready = False
+# --- SESSION STATE ---
+if "pins" not in st.session_state:
+    st.session_state.pins = []
+if "selected" not in st.session_state:
+    st.session_state.selected = []
+if "zip_file" not in st.session_state:
+    st.session_state.zip_file = ""
 
-# --- Sidebar ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.markdown('<p class="sidebar-title">📌 PINTEREST SCRAPER</p>',
-                unsafe_allow_html=True)
-    query = st.text_input("Cari Inspirasi", placeholder="Ketik sesuatu...")
-    limit = st.number_input("Jumlah Gambar", 1, 100, 20)
+    st.title("📌 PinSave")
+    query = st.text_input("Cari Gambar", placeholder="Misal: Coffee Aesthetic")
+    limit = st.slider("Jumlah Maksimal", 5, 100, 30)
 
-    if st.button("Cari Sekarang"):
+    if st.button("Cari Gambar"):
         if query:
-            with st.spinner("Mencari..."):
+            with st.spinner("Mencari inspirasi..."):
                 res = get_preview(query, limit)
                 if isinstance(res, list) and len(res) > 0:
                     st.session_state.pins = res
-                    st.session_state.last_query = query
-                    st.session_state.selected_urls = []
-                    st.session_state.zip_ready = False
+                    st.session_state.selected = []
+                    st.session_state.zip_file = ""
                     st.rerun()
                 else:
-                    st.error(
-                        f"Gagal: {res if isinstance(res, str) else 'Data kosong'}")
+                    st.error("Tidak ditemukan hasil. Coba kata kunci lain.")
         else:
-            st.warning("Isi kata kunci!")
+            st.warning("Masukkan teks pencarian!")
 
-# --- Konten Utama ---
+# --- MAIN CONTENT ---
 if st.session_state.pins:
-    col_t, col_b = st.columns([3, 1])
-    with col_t:
-        st.markdown(f"### Hasil untuk: `{st.session_state.last_query}`")
-    with col_b:
-        count = len(st.session_state.selected_urls)
-        if st.session_state.zip_ready:
-            zip_p = os.path.join("downloaded_images",
-                                 st.session_state.zip_filename)
-            if os.path.exists(zip_p):
-                with open(zip_p, "rb") as f:
+    col_head, col_btn = st.columns([3, 1])
+
+    with col_head:
+        st.subheader(f"Hasil untuk: {query if query else 'Pencarian'}")
+        st.write(f"Terpilih: **{len(st.session_state.selected)}** gambar")
+
+    with col_btn:
+        if st.session_state.zip_file:
+            path = os.path.join("downloaded_images", st.session_state.zip_file)
+            if os.path.exists(path):
+                with open(path, "rb") as f:
                     st.download_button(
-                        "⬇️ Download ZIP", f, st.session_state.zip_filename, "application/zip")
-                if st.button("🔄 Cari Lagi"):
-                    st.session_state.zip_ready = False
+                        "⬇️ DOWNLOAD ZIP", f, st.session_state.zip_file, use_container_width=True)
+                if st.button("🔄 Reset"):
+                    st.session_state.zip_file = ""
                     st.rerun()
         else:
-            if st.button(f"📦 ZIP {count} Gambar", disabled=(count == 0)):
-                with st.spinner("Zipping..."):
-                    fname = download_and_zip(
-                        st.session_state.selected_urls, st.session_state.last_query)
-                    st.session_state.zip_ready = True
-                    st.session_state.zip_filename = fname
+            btn_txt = f"📦 BUAT ZIP ({len(st.session_state.selected)})"
+            if st.button(btn_txt, disabled=len(st.session_state.selected) == 0):
+                with st.spinner("Mengompres..."):
+                    zip_name = download_and_zip(
+                        st.session_state.selected, query)
+                    st.session_state.zip_file = zip_name
                     st.rerun()
 
     st.divider()
+
+    # GRID DISPLAY
     cols = st.columns(4)
-    for idx, url in enumerate(st.session_state.pins):
-        with cols[idx % 4]:
+    for i, url in enumerate(st.session_state.pins):
+        with cols[i % 4]:
             st.image(url, use_container_width=True)
-            if st.checkbox(f"Pilih #{idx+1}", key=f"c_{idx}"):
-                if url not in st.session_state.selected_urls:
-                    st.session_state.selected_urls.append(url)
+            # Sync selection
+            is_sel = st.checkbox(f"Pilih #{i+1}", key=f"pin_{i}")
+            if is_sel:
+                if url not in st.session_state.selected:
+                    st.session_state.selected.append(url)
             else:
-                if url in st.session_state.selected_urls:
-                    st.session_state.selected_urls.remove(url)
+                if url in st.session_state.selected:
+                    st.session_state.selected.remove(url)
 else:
-    st.markdown("<br><br><div style='text-align: center'><h1>🔍</h1><h3>Cari gambar di sidebar untuk memulai</h3></div>", unsafe_allow_html=True)
+    st.markdown("<br><br><center><h1>🔍</h1><h3>Gunakan sidebar untuk mencari gambar</h3></center>",
+                unsafe_allow_html=True)
