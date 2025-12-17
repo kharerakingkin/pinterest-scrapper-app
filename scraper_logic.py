@@ -1,76 +1,74 @@
-import requests
-import re
+import streamlit as st
 import os
-import zipfile
-from uuid import uuid4
+from scraper_logic import get_preview, download_and_zip
 
+# --- CONFIG ---
+st.set_page_config(page_title="PinSave Pro", page_icon="📌", layout="wide")
 
-def get_preview(query, limit):
-    """Mengambil banyak URL gambar dengan pola Regex yang luas"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer": "https://www.pinterest.com/"
-    }
+# CSS untuk tampilan rapi
+st.markdown("""
+    <style>
+    .stApp { background-color: #111; color: white; }
+    [data-testid="stImage"] img { border-radius: 12px; height: 350px !important; object-fit: cover; border: 1px solid #333; }
+    div.stButton > button { background-color: #e60023; color: white; border-radius: 20px; font-weight: bold; border: none; }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # Format URL pencarian agar hasil lebih maksimal
-    search_url = f"https://www.pinterest.com/search/pins/?q={query.replace(' ', '%20')}&rs=typed"
+# --- STATE ---
+if "pins" not in st.session_state:
+    st.session_state.pins = []
+if "selected" not in st.session_state:
+    st.session_state.selected = set()
+if "zip_file" not in st.session_state:
+    st.session_state.zip_file = ""
 
-    try:
-        response = requests.get(search_url, headers=headers, timeout=15)
-        if response.status_code != 200:
-            return f"Error: Pinterest menolak akses (Status {response.status_code})"
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("📌 PinSave")
+    query = st.text_input(
+        "Cari Sesuatu", placeholder="Contoh: Wallpaper Aesthetic")
+    limit = st.number_input("Jumlah", 1, 100, 20)
 
-        html = response.text
+    if st.button("Cari Sekarang", width="stretch"):
+        if query:
+            with st.spinner("Mengambil data dari Pinterest..."):
+                res = get_preview(query, limit)
+                if isinstance(res, list) and len(res) > 0:
+                    st.session_state.pins = res
+                    st.session_state.selected = set()
+                    st.session_state.zip_file = ""
+                    st.rerun()
+                else:
+                    st.error(
+                        "Gagal mendapatkan gambar. Pinterest mungkin membatasi akses.")
 
-        # Mencari semua pola URL gambar Pinterest (Original, 736x, 474x)
-        patterns = [
-            r'https://i\.pinimg\.com/originals/[a-z0-9/]+\.(?:jpg|png|webp)',
-            r'https://i\.pinimg\.com/736x/[a-z0-9/]+\.(?:jpg|png|webp)',
-            r'https://i\.pinimg\.com/474x/[a-z0-9/]+\.(?:jpg|png|webp)'
-        ]
+# --- MAIN ---
+if st.session_state.pins:
+    col_t, col_b = st.columns([3, 1])
+    with col_t:
+        st.subheader(f"Hasil untuk: {query}")
+    with col_b:
+        if st.session_state.zip_file:
+            path = os.path.join("downloaded_images", st.session_state.zip_file)
+            with open(path, "rb") as f:
+                st.download_button("⬇️ DOWNLOAD ZIP", f,
+                                   st.session_state.zip_file, width="stretch")
+        else:
+            if st.button(f"📦 ZIP ({len(st.session_state.selected)})", width="stretch", disabled=not st.session_state.selected):
+                fname = download_and_zip(
+                    list(st.session_state.selected), query)
+                st.session_state.zip_file = fname
+                st.rerun()
 
-        found_urls = []
-        for pattern in patterns:
-            found_urls.extend(re.findall(pattern, html))
-
-        # Menghapus duplikat sambil menjaga urutan asli
-        unique_urls = []
-        for url in found_urls:
-            if url not in unique_urls:
-                unique_urls.append(url)
-
-        # Cadangan jika pola spesifik gagal
-        if not unique_urls:
-            unique_urls = re.findall(
-                r'https://i\.pinimg\.com/[a-z0-9//]+\.jpg', html)
-
-        return unique_urls[:limit]
-
-    except Exception as e:
-        return f"Terjadi kesalahan: {str(e)}"
-
-
-def download_and_zip(urls, query):
-    """Proses unduh gambar langsung ke memori ZIP tanpa menyimpan file sampah"""
-    folder_name = "downloaded_images"
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
-
-    zip_filename = f"{query.replace(' ', '_')}_{uuid4().hex[:6]}.zip"
-    zip_path = os.path.join(folder_name, zip_filename)
-
-    with zipfile.ZipFile(zip_path, 'w') as zip_file:
-        for i, url in enumerate(urls):
-            try:
-                res = requests.get(url, timeout=10)
-                if res.status_code == 200:
-                    ext = url.split('.')[-1]
-                    # Membersihkan parameter URL jika ada (seperti .jpg?v=123)
-                    ext = ext.split('?')[0]
-                    img_name = f"pin_{i+1}.{ext}"
-                    zip_file.writestr(img_name, res.content)
-            except:
-                continue
-
-    return zip_filename
+    st.divider()
+    cols = st.columns(4)
+    for i, url in enumerate(st.session_state.pins):
+        with cols[i % 4]:
+            st.image(url, width="stretch")
+            # Logika seleksi yang lebih stabil
+            if st.checkbox(f"Pilih #{i+1}", key=f"chk_{url}"):
+                st.session_state.selected.add(url)
+            else:
+                st.session_state.selected.discard(url)
+else:
+    st.info("Gunakan sidebar untuk mencari gambar.")
