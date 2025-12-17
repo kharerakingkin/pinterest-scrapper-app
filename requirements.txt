@@ -2,4 +2,6 @@ flask
 selenium
 requests
 streamlit
+json
+bs4
 webdriver-manager
