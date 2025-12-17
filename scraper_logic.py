@@ -1,52 +1,53 @@
 import requests
-import json
+import re
 import os
 import zipfile
 from uuid import uuid4
 
 
 def get_preview(query, limit):
-    """Mencari gambar via Pinterest Internal Data (Tanpa Selenium)"""
-    # Mencoba akses via URL pencarian dengan User-Agent modern
+    """Mencari URL gambar secara paksa di seluruh kode sumber Pinterest"""
     url = f"https://www.pinterest.com/search/pins/?q={query.replace(' ', '%20')}"
+
+    # User-Agent yang sangat spesifik agar dikira browser manusia
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/"
     }
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code != 200:
-            return f"Pinterest Error (Status {response.status_code})"
+            return f"Pinterest memblokir akses server (Status {response.status_code})"
 
-        # Ekstraksi JSON dari tag script __PWS_DATA__
-        content = response.text
-        start_marker = '<script id="__PWS_DATA__" type="application/json">'
-        end_marker = '</script>'
+        html_content = response.text
 
-        if start_marker in content:
-            json_str = content.split(start_marker)[1].split(end_marker)[0]
-            data = json.loads(json_str)
+        # Pola untuk mencari link gambar Pinterest (resolusi 736x atau originals)
+        # Pinterest menyimpan link ini dalam format string tersembunyi
+        patterns = [
+            r'https://i\.pinimg\.com/originals/[a-zA-Z0-9/_\-]+\.(?:jpg|png|webp)',
+            r'https://i\.pinimg\.com/736x/[a-zA-Z0-9/_\-]+\.(?:jpg|png|webp)'
+        ]
 
-            pins_data = data.get('props', {}).get(
-                'initialReduxState', {}).get('pins', {})
+        all_matches = []
+        for pattern in patterns:
+            matches = re.findall(pattern, html_content)
+            all_matches.extend(matches)
 
-            image_urls = []
-            for pin_id in pins_data:
-                images = pins_data[pin_id].get('images', {})
-                # Utamakan resolusi original atau 736x
-                img_url = images.get('orig', {}).get(
-                    'url') or images.get('736x', {}).get('url')
-                if img_url and img_url not in image_urls:
-                    image_urls.append(img_url)
+        # Bersihkan hasil (hapus duplikat dan bersihkan karakter escape jika ada)
+        unique_urls = []
+        for url_match in all_matches:
+            # Menghapus backslash dari JSON
+            clean_url = url_match.replace('\\', '')
+            if clean_url not in unique_urls:
+                unique_urls.append(clean_url)
 
-            if not image_urls:
-                return "Tidak ada gambar ditemukan. Pinterest mungkin memperbarui sistemnya."
+        if not unique_urls:
+            return "Tidak ada gambar ditemukan. Coba gunakan kata kunci dalam Bahasa Inggris (misal: 'Minimalist Interior')."
 
-            return image_urls[:limit]
-
-        return "Gagal mengekstraksi data. Coba lagi atau ganti kata kunci."
+        return unique_urls[:limit]
 
     except Exception as e:
         return f"Terjadi kesalahan: {str(e)}"
